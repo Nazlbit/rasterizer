@@ -3,6 +3,7 @@
 #include <cmath>
 #include <chrono>
 #include <thread>
+#include <algorithm>
 
 namespace math
 {
@@ -40,7 +41,7 @@ namespace math
         return a.x * b.y - b.x * a.y;
     }
 
-    inline float edge_func(vec2 a, vec2 b, vec2 p)
+    inline float edge_func(const vec2 &a, const vec2 &b, const vec2 &p)
     {
         return cross(p - a, p - b);
     }
@@ -149,7 +150,7 @@ namespace math
         return {dot(a.row[0], b), dot(a.row[1], b), dot(a.row[2], b), dot(a.row[3], b)};
     }
 
-    inline mat4 make_perspective_projection_matrix(float fov, float near, float far, float aspect_ratio)
+    inline mat4 make_perspective_projection_matrix(const float fov, const float near, const float far, const float aspect_ratio)
     {
         const float tg = 1.f / tanf(fov * 0.5f);
         return {tg / aspect_ratio, 0, 0, 0,
@@ -158,15 +159,15 @@ namespace math
                 0, 0, 1, 0};
     }
 
-    mat4 make_look_to_matrix(vec3 pos, vec3 dir, vec3 up)
+    mat4 make_look_to_matrix(const vec3 &pos, const vec3 &dir, const vec3 &up)
     {
-        dir = normalize(dir);
-        vec3 right = normalize(cross(up, dir));
-        up = cross(dir, right);
+        const vec3 normalized_dir = normalize(dir);
+        const vec3 right = normalize(cross(up, normalized_dir));
+        const vec3 normalized_up = cross(normalized_dir, right);
 
         return mat4{right.x, right.y, right.z, -dot(pos, right),
-                    up.x, up.y, up.z, -dot(pos, up),
-                    dir.x, dir.y, dir.z, -dot(pos, dir),
+                    normalized_up.x, normalized_up.y, normalized_up.z, -dot(pos, normalized_up),
+                    normalized_dir.x, normalized_dir.y, normalized_dir.z, -dot(pos, normalized_dir),
                     0, 0, 0, 1};
     }
 
@@ -185,25 +186,7 @@ namespace math
         return barycentric.x >= 0.f && barycentric.y >= 0.f && barycentric.z >= 0.f;
     }
 
-    template <class T>
-    inline T min(const T &a, const T &b)
-    {
-        return a < b ? a : b;
-    }
-
-    template <class T>
-    inline T max(const T &a, const T &b)
-    {
-        return a > b ? a : b;
-    }
-
-    template <class T>
-    inline T clamp(const T &min_val, const T &max_val, const T &val)
-    {
-        return min(max(val, min_val), max_val);
-    }
-
-    inline int cartesian_to_screen(const float val, const int screen_dimension)
+    inline int cartesian_to_screen(const float val, const unsigned screen_dimension)
     {
         return static_cast<int>((val + 1.f) * 0.5f * screen_dimension + 0.5f);
     }
@@ -248,10 +231,10 @@ struct fragment_uniforms
     float light;
 };
 
-char shade_to_ascii(float val)
+char shade_to_ascii(const float val)
 {
     const char gradient[] = {' ', '.', '-', ':', '+', '=', '*', '#', '%', '@'};
-    return gradient[math::clamp<unsigned>(0u, 9u, static_cast<unsigned>(val * 10.f))];
+    return gradient[std::clamp<unsigned>(static_cast<unsigned>(val * 10.f), 0u, 9u)];
 }
 
 math::vec4 vertex_shader(const vertex_in &in, vertex_out &out, const vertex_uniforms &uniforms)
@@ -287,21 +270,21 @@ std::vector<math::vec3> shade_vertices(const std::vector<vertex_in> &in, std::ve
 float fragment_shader(const vertex_out &in, const fragment_uniforms &frag_uniforms)
 {
     const math::vec3 normal = math::normalize(in.world_norm);
-    const float diffuse = math::max(0.f, math::dot(normal, -frag_uniforms.light_dir)) * frag_uniforms.light;
+    const float diffuse = std::max(0.f, math::dot(normal, -frag_uniforms.light_dir)) * frag_uniforms.light;
 
     const math::vec3 cam_dir = math::normalize(in.world_pos - frag_uniforms.cam_pos);
-    const float specular = powf(math::max(0.f, math::dot(-math::normalize(cam_dir), math::reflect(normal, frag_uniforms.light_dir))), frag_uniforms.specular_pow) * frag_uniforms.specular * frag_uniforms.light;
+    const float specular = powf(std::max(0.f, math::dot(-math::normalize(cam_dir), math::reflect(normal, frag_uniforms.light_dir))), frag_uniforms.specular_pow) * frag_uniforms.specular * frag_uniforms.light;
     float result = (diffuse + frag_uniforms.ambient) * in.shade + specular;
 
     return result;
 }
 
-void render(char *buffer, float *depth_buffer, const int width, const int height, const mesh &m, const vertex_uniforms &vert_uniforms, const fragment_uniforms &frag_uniforms)
+void render(char *buffer, float *depth_buffer, const unsigned width, const unsigned height, const mesh &m, const vertex_uniforms &vert_uniforms, const fragment_uniforms &frag_uniforms)
 {
     const math::vec2 pixel_half_size = {1.f / width, 1.f / height};
 
     std::vector<vertex_out> shaded_vertices(m.vertices.size());
-    std::vector<math::vec3> cartesian_positions = shade_vertices(m.vertices, shaded_vertices, vert_uniforms);
+    const std::vector<math::vec3> cartesian_positions = shade_vertices(m.vertices, shaded_vertices, vert_uniforms);
 
     const size_t triangle_num = m.indices.size() / 3;
 
@@ -321,19 +304,19 @@ void render(char *buffer, float *depth_buffer, const int width, const int height
         }
 
         // Bounding box
-        const int left = math::clamp<int>(0, width, math::cartesian_to_screen(math::min(math::min(a_pos.x, b_pos.x), c_pos.x), width));
-        const int right = math::clamp<int>(0, width, math::cartesian_to_screen(math::max(math::max(a_pos.x, b_pos.x), c_pos.x), width));
-        const int bottom = math::clamp<int>(0, height, math::cartesian_to_screen(-math::min(math::min(a_pos.y, b_pos.y), c_pos.y), height));
-        const int top = math::clamp<int>(0, height, math::cartesian_to_screen(-math::max(math::max(a_pos.y, b_pos.y), c_pos.y), height));
+        const unsigned left = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(std::min(std::min(a_pos.x, b_pos.x), c_pos.x), width), 0, width));
+        const unsigned right = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(std::max(std::max(a_pos.x, b_pos.x), c_pos.x), width), 0, width));
+        const unsigned bottom = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(-std::min(std::min(a_pos.y, b_pos.y), c_pos.y), height), 0, height));
+        const unsigned top = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(-std::max(std::max(a_pos.y, b_pos.y), c_pos.y), height), 0, height));
 
         if (left == right)
         {
             continue;
         }
 
-        for (int y = top; y < bottom; y++)
+        for (unsigned y = top; y < bottom; y++)
         {
-            for (int x = left; x < right; x++)
+            for (unsigned x = left; x < right; x++)
             {
                 const math::vec2 p = {((float)x / width) * 2.f - 1.f + pixel_half_size.x,
                                       -(((float)y / height) * 2.f - 1.f + pixel_half_size.y)};
@@ -361,10 +344,10 @@ void render(char *buffer, float *depth_buffer, const int width, const int height
     }
 }
 
-mesh make_sphere(int longitude_segments, int latitude_segments)
+mesh make_sphere(unsigned longitude_segments, unsigned latitude_segments)
 {
-    longitude_segments = math::max(longitude_segments, 3);
-    latitude_segments = math::max(latitude_segments, 2);
+    longitude_segments = std::max(longitude_segments, 3u);
+    latitude_segments = std::max(latitude_segments, 2u);
 
     const size_t num_vertices = (size_t)longitude_segments * (latitude_segments - 1) + 2;
     const size_t num_triangles = (size_t)longitude_segments * 2 * (latitude_segments - 1);
@@ -449,34 +432,44 @@ mesh make_sphere(int longitude_segments, int latitude_segments)
     return sphere_mesh;
 }
 
-void clear_framebuffer(char *buffer, float *depth_buffer, int width, int height)
+void clear_framebuffer(char *buffer, float *depth_buffer, const unsigned width, const unsigned height, const char val, const float depth_val)
 {
-    for (int i = 0; i < height; i++)
+    for (unsigned i = 0; i < height; i++)
     {
-        for (int j = 0; j < width; j++)
+        for (unsigned j = 0; j < width; j++)
         {
-            buffer[(width + 1) * i + j] = ' ';
-            depth_buffer[width * i + j] = 1.f;
+            buffer[(width + 1) * i + j] = val;
+            depth_buffer[width * i + j] = depth_val;
         }
         buffer[(width + 1) * i + width] = '\n';
     }
+    buffer[(width + 1) * height - 1] = '\0';
 }
 
-int main(int, char **)
+void present(const char *buffer)
 {
-    const int width = 100, height = 50;
+    system("clear");
+    printf("%s\n", buffer);
+}
+
+int main(const int argc, const char *const *const argv)
+{
+    const unsigned width = 100, height = 50;
+
     const float aspect_ratio = (float)width / height * 0.5f;
     const float fov = M_PI / 180.f * 65.f;
     float t = 0;
 
-    mesh m = make_sphere(50, 25);
+    const mesh m = make_sphere(50, 25);
 
-    char screen[(width + 1) * height];
+    char buffer[(width + 1) * height];
     float depth_buffer[width * height];
 
     while (true)
     {
-        clear_framebuffer(screen, depth_buffer, width, height);
+        const char clear_val = ' ';
+        const float depth_clear_val = 1.f;
+        clear_framebuffer(buffer, depth_buffer, width, height, clear_val, depth_clear_val);
 
         const math::vec3 cam_dir = {-sin(t), 0.f, cos(t)};
         const math::vec3 cam_pos = cam_dir * -2.f;
@@ -491,14 +484,13 @@ int main(int, char **)
         frag_uniforms.cam_pos = cam_pos;
         frag_uniforms.light_dir = math::normalize({-1.f, -1.f, 1.f});
         frag_uniforms.ambient = 0.15f;
-        frag_uniforms.specular = 0.9f;
+        frag_uniforms.specular = 1.f;
         frag_uniforms.specular_pow = 32.f;
-        frag_uniforms.light = 0.7f;
+        frag_uniforms.light = 0.6f;
 
-        render(screen, depth_buffer, width, height, m, vert_uniforms, frag_uniforms);
+        render(buffer, depth_buffer, width, height, m, vert_uniforms, frag_uniforms);
 
-        screen[(width + 1) * height - 1] = '\0';
-        printf("%s\n", screen);
+        present(buffer);
 
         t += 0.05;
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
