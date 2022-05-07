@@ -492,8 +492,8 @@ int main(const int argc, const char *const *const argv)
 
         present(buffer);
 
-        t += 0.05;
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        t += 0.033;
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
 
     return 0;
