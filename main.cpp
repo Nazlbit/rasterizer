@@ -186,7 +186,7 @@ namespace math
         return barycentric.x >= 0.f && barycentric.y >= 0.f && barycentric.z >= 0.f;
     }
 
-    inline int cartesian_to_screen(const float val, const unsigned screen_dimension)
+    inline int normalized_to_screen(const float val, const unsigned screen_dimension)
     {
         return static_cast<int>((val + 1.f) * 0.5f * screen_dimension + 0.5f);
     }
@@ -256,15 +256,15 @@ math::vec4 vertex_shader(const vertex_in &in, vertex_out &out, const vertex_unif
 
 std::vector<math::vec3> shade_vertices(const std::vector<vertex_in> &in, std::vector<vertex_out> &out, const vertex_uniforms &uniforms)
 {
-    std::vector<math::vec3> cartesian_positions(in.size());
+    std::vector<math::vec3> normalized_positions(in.size());
 
     for (size_t i = 0; i < in.size(); i++)
     {
         const math::vec4 pos = vertex_shader(in[i], out[i], uniforms);
-        cartesian_positions[i] = pos.xyz / pos.w; // perspective division
+        normalized_positions[i] = pos.xyz / pos.w; // perspective division
     }
 
-    return cartesian_positions;
+    return normalized_positions;
 }
 
 float fragment_shader(const vertex_out &in, const fragment_uniforms &frag_uniforms)
@@ -284,7 +284,7 @@ void render(char *buffer, float *depth_buffer, const unsigned width, const unsig
     const math::vec2 pixel_half_size = {1.f / width, 1.f / height};
 
     std::vector<vertex_out> shaded_vertices(m.vertices.size());
-    const std::vector<math::vec3> cartesian_positions = shade_vertices(m.vertices, shaded_vertices, vert_uniforms);
+    const std::vector<math::vec3> normalized_positions = shade_vertices(m.vertices, shaded_vertices, vert_uniforms);
 
     const size_t triangle_num = m.indices.size() / 3;
 
@@ -294,20 +294,21 @@ void render(char *buffer, float *depth_buffer, const unsigned width, const unsig
         const vertex_out &b_out = shaded_vertices[m.indices[i * 3 + 1]];
         const vertex_out &c_out = shaded_vertices[m.indices[i * 3 + 2]];
 
-        const math::vec3 &a_pos = cartesian_positions[m.indices[i * 3]];
-        const math::vec3 &b_pos = cartesian_positions[m.indices[i * 3 + 1]];
-        const math::vec3 &c_pos = cartesian_positions[m.indices[i * 3 + 2]];
+        const math::vec3 &a_pos = normalized_positions[m.indices[i * 3]];
+        const math::vec3 &b_pos = normalized_positions[m.indices[i * 3 + 1]];
+        const math::vec3 &c_pos = normalized_positions[m.indices[i * 3 + 2]];
 
+        /* Backface culling */
         if (math::edge_func(a_pos.xy, b_pos.xy, c_pos.xy) <= 0)
         {
             continue;
         }
 
         // Bounding box
-        const unsigned left = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(std::min(std::min(a_pos.x, b_pos.x), c_pos.x), width), 0, width));
-        const unsigned right = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(std::max(std::max(a_pos.x, b_pos.x), c_pos.x), width), 0, width));
-        const unsigned bottom = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(-std::min(std::min(a_pos.y, b_pos.y), c_pos.y), height), 0, height));
-        const unsigned top = static_cast<unsigned>(std::clamp<int>(math::cartesian_to_screen(-std::max(std::max(a_pos.y, b_pos.y), c_pos.y), height), 0, height));
+        const unsigned left = static_cast<unsigned>(std::clamp<int>(math::normalized_to_screen(std::min(std::min(a_pos.x, b_pos.x), c_pos.x), width), 0, width));
+        const unsigned right = static_cast<unsigned>(std::clamp<int>(math::normalized_to_screen(std::max(std::max(a_pos.x, b_pos.x), c_pos.x), width), 0, width));
+        const unsigned bottom = static_cast<unsigned>(std::clamp<int>(math::normalized_to_screen(-std::min(std::min(a_pos.y, b_pos.y), c_pos.y), height), 0, height));
+        const unsigned top = static_cast<unsigned>(std::clamp<int>(math::normalized_to_screen(-std::max(std::max(a_pos.y, b_pos.y), c_pos.y), height), 0, height));
 
         if (left == right)
         {
